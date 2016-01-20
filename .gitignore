@@ -1,6 +1,8 @@
 .git
 # ignore intellj project
 .idea
-project
+project/project
+project/target
+project/build.properties
 # ignore build artifacts
 target
