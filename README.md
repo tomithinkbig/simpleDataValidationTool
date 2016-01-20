@@ -57,7 +57,7 @@ If everything went well, you should see the counts in tabular form:
 
 ## Todo
 
-Where should I start ??? I mean, this is in its 0.1 version a data validation tool,
+Where should I start ??? I mean, this is the 0.1 version of a data validation tool,
 with just 150 lines Scala of code, all it does is comparing counts.
 
 - **Write Unit tests** (refactor code for testability)

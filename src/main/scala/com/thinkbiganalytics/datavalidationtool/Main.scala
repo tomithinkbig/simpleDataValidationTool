@@ -61,15 +61,15 @@ object Main {
 
       hCatUrlOkOrThrow(settings)
 
-      val databaseNames = getDataBaseNames(settings)
+      val databaseNames = getDataBaseNamesFromHCat(settings)
       if (!databaseNames.contains(databaseName)) {
         throw new IllegalArgumentException(s"available databases on the server ${databaseNames} does not contain supplied database ${databaseName} ")
       }
 
-      val tableNames = getTableNames(settings, databaseName)
-      //println(s"getDataBaseNames: ${databaseNames} getTableNames: ${tableNames}\n\n")
+      val tableNames = getTableNamesFromHCat(settings, databaseName)
+      println(s"getDataBaseNames: ${databaseNames} getTableNames: ${tableNames}\n\n")
 
-      val tableStems = getTableStems(tableNames, settings.rawTablePostFix, settings.currentTablePostFix)
+      val tableStems = filterTableStems(tableNames, settings.rawTablePostFix, settings.currentTablePostFix)
       println(s"tableStems: ${tableStems}")
 
       compareRowCounts(databaseName, tableStems, settings.rawTablePostFix, settings.currentTablePostFix)
@@ -93,19 +93,19 @@ object Main {
     }
   }
 
-  def getDataBaseNames(settings: Settings): List[String] = {
+  def getDataBaseNamesFromHCat(settings: Settings): List[String] = {
     val url = s"${settings.hCatUrlPrefix}ddl/database/?${settings.hCatUrlParams}"
     val response = Source.fromURL(url).mkString // should be  {"databases":["default","xademo"]}
     (parse(response) \ "databases").extract[List[String]]
   }
 
-  def getTableNames(settings: Settings, databaseName: String): List[String] = {
+  def getTableNamesFromHCat(settings: Settings, databaseName: String): List[String] = {
     val url = s"${settings.hCatUrlPrefix}ddl/database/${databaseName}/table?${settings.hCatUrlParams}"
-    val response = Source.fromURL(url).mkString // should be {"databases":["default","xademo"]}
+    val response = Source.fromURL(url).mkString // should be {"tables":["t1","t2_raw","t2_current"]}
     (parse(response) \ "tables").extract[List[String]]
   }
 
-  def getTableStems(tableNames: List[String], rawTablePostFix: String, currentTablePostFix: String): List[String] = {
+  def filterTableStems(tableNames: List[String], rawTablePostFix: String, currentTablePostFix: String): List[String] = {
     val stemsWithMatchingSuffix = (suffix: String) => tableNames.filter(_.endsWith(suffix)).map(_.dropRight(suffix.length))
 
     val rawTableStems = stemsWithMatchingSuffix(rawTablePostFix)
@@ -127,6 +127,9 @@ object Main {
     sc = new SparkContext(sparkConf)
     hc = new HiveContext(sc)
 
+    // could add more, so we can see some progress
+    val numTablesProcessedAccumulator = sc.accumulator(0,"numTablesProcessed")
+
     // TODO parallelize runs the number of partions as it sees fit, might want to pass this in as a parameter
     // TODO use a broad cast variable to show progress
     val res: RDD[TableCounts] = sc.parallelize(commonTableStems).map { stem =>
@@ -134,14 +137,16 @@ object Main {
       val currentTable = stem + currentTablePostFix
 
       val rawCount = hc.sql(s"SELECT * FROM ${databaseName}.${rawTable}").count()
+      numTablesProcessedAccumulator += 1
       val currentCount = hc.sql(s"SELECT * FROM ${databaseName}.${currentTable}").count()
+      numTablesProcessedAccumulator += 1
 
       TableCounts(databaseName, rawTable, rawCount, currentTable, currentCount, rawCount == currentCount)
     }
 
     val resDF = hc.createDataFrame(res)
 
-    // todo fix output
+    // TODO fix output
     resDF.show()
 
     sc.stop()
