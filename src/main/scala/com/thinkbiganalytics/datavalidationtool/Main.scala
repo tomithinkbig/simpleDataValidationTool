@@ -127,8 +127,9 @@ object Main {
     sc = new SparkContext(sparkConf)
     hc = new HiveContext(sc)
 
-    // could add more, so we can see some progress
-    val numTablesProcessedAccumulator = sc.accumulator(0,"numTablesProcessed")
+    // simple countain for number of tables remaining to be processed
+    val numTablesRemainingToProcessAccumulator = sc.accumulator(commonTableStems.length * 2l,"numTablesRemainingToProcess")
+    val rowsCountedAccumulator = sc.accumulator(0l,"rowsCounted")
 
     // TODO parallelize runs the number of partions as it sees fit, might want to pass this in as a parameter
     // TODO use a broad cast variable to show progress
@@ -136,10 +137,16 @@ object Main {
       val rawTable = stem + rawTablePostFix
       val currentTable = stem + currentTablePostFix
 
-      val rawCount = hc.sql(s"SELECT * FROM ${databaseName}.${rawTable}").count()
-      numTablesProcessedAccumulator += 1
-      val currentCount = hc.sql(s"SELECT * FROM ${databaseName}.${currentTable}").count()
-      numTablesProcessedAccumulator += 1
+      //val rawCount = hc.table(s"${databaseName}.${rawTable}").count() // qualified table name did not work
+      val rawCounts = hc.sql(s"SELECT COUNT(*) AS rawCount FROM ${databaseName}.${rawTable}").collect()
+      val rawCount = rawCounts(0).getAs[Long]("rawCount") // select count always returns one row
+      numTablesRemainingToProcessAccumulator += -1
+      rowsCountedAccumulator += rawCount
+
+      val currentCounts =  hc.sql(s"SELECT COUNT(*) AS currentCount FROM ${databaseName}.${currentTable}").collect()
+      val currentCount = currentCounts(0).getAs[Long]("currentCount") // select count always returns one row
+      numTablesRemainingToProcessAccumulator += -1
+      rowsCountedAccumulator += currentCount
 
       TableCounts(databaseName, rawTable, rawCount, currentTable, currentCount, rawCount == currentCount)
     }
